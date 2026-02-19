@@ -7,7 +7,7 @@ export interface FormData {
   time: string;
   duration: string;
   location: string;
-  equipment: number[];
+  equipment: string[];
   additionals: number[];
   responsible: string;
   department: string;
@@ -41,11 +41,7 @@ export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?:
   }, [selectedDate]);
 
   // Simulação de reservas existentes para detecção de conflitos
-  const existingReservations = [
-    { location: 'Igreja', date: '2025-01-08', time: '09:00', duration: '2' },
-    { location: 'Auditório Sergio Cidadão', date: '2025-01-10', time: '14:00', duration: '4' },
-    { location: 'IDEC', date: '2025-01-12', time: '16:00', duration: '2' },
-  ];
+  const existingReservations: Array<{ location: string; date: string; time: string; duration: string }> = [];
 
   const checkConflict = () => {
     if (!formData.date || !formData.time || !formData.location || !formData.duration) {

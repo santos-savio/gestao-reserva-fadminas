@@ -1,21 +1,12 @@
 import { CheckCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import type { FormData } from '@/hooks/useReservationForm';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface SummaryStepProps {
   formData: FormData;
 }
-
-const equipment = [
-  { id: 1, name: 'Computador', available: true },
-  { id: 2, name: 'Telão/Projetor/TV', available: true },
-  { id: 3, name: 'Mesa de Som', available: true },
-  { id: 4, name: 'Caixa de Som', available: true },
-  { id: 5, name: 'Microfone', available: false },
-  { id: 6, name: 'Câmeras de gravação', available: true },
-  { id: 7, name: 'Mídia (celular)', available: true },
-  { id: 8, name: 'Iluminação', available: true },
-];
 
 const additionals = [
   { id: 9, name: 'Passador', available: true },
@@ -25,6 +16,31 @@ const additionals = [
 ];
 
 export const SummaryStep = ({ formData }: SummaryStepProps) => {
+  const { data: equipment = [] } = useQuery({
+    queryKey: ['equipamentos'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('equipamentos').select('id,nome');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: locations = [] } = useQuery({
+    queryKey: ['locais'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('locais').select('id,nome');
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const selectedEquipmentNames = formData.equipment
+    .map((id) => equipment.find((e) => e.id === id)?.nome)
+    .filter(Boolean)
+    .join(', ');
+
+  const selectedLocationName = locations.find((l) => l.id === formData.location)?.nome;
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -43,14 +59,14 @@ export const SummaryStep = ({ formData }: SummaryStepProps) => {
         
         <div>
           <h4 className="font-medium text-gray-900">Local</h4>
-          <p className="text-gray-600">{formData.location || 'Não selecionado'}</p>
+          <p className="text-gray-600">{selectedLocationName || 'Não selecionado'}</p>
         </div>
         
         <div>
           <h4 className="font-medium text-gray-900">Equipamentos</h4>
           <p className="text-gray-600">
             {formData.equipment.length > 0 
-              ? equipment.filter(e => formData.equipment.includes(e.id)).map(e => e.name).join(', ')
+              ? (selectedEquipmentNames || 'Carregando...')
               : 'Nenhum equipamento selecionado'
             }
           </p>

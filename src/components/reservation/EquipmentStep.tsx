@@ -4,23 +4,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FormData } from '@/hooks/useReservationForm';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface EquipmentStepProps {
   formData: FormData;
   setFormData: (data: FormData) => void;
   isDecorationSelected: () => boolean;
 }
-
-const equipment = [
-  { id: 1, name: 'Computador', available: true },
-  { id: 2, name: 'Telão/Projetor/TV', available: true },
-  { id: 3, name: 'Mesa de Som', available: true },
-  { id: 4, name: 'Caixa de Som', available: true },
-  { id: 5, name: 'Microfone', available: false },
-  { id: 6, name: 'Câmeras de gravação', available: true },
-  { id: 7, name: 'Mídia (celular)', available: true },
-  { id: 8, name: 'Iluminação', available: true },
-];
 
 const additionals = [
   { id: 9, name: 'Passador', available: true },
@@ -30,7 +21,20 @@ const additionals = [
 ];
 
 export const EquipmentStep = ({ formData, setFormData, isDecorationSelected }: EquipmentStepProps) => {
-  const handleEquipmentChange = (equipmentId: number, checked: boolean) => {
+  const { data: equipment = [], isLoading } = useQuery({
+    queryKey: ['equipamentos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('equipamentos')
+        .select('*')
+        .order('nome', { ascending: true });
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const handleEquipmentChange = (equipmentId: string, checked: boolean) => {
     if (checked) {
       setFormData({
         ...formData,
@@ -73,26 +77,33 @@ export const EquipmentStep = ({ formData, setFormData, isDecorationSelected }: E
         <div>
           <h4 className="font-medium text-gray-900 mb-3">Equipamentos</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {equipment.map((item) => (
-              <div key={item.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                <Checkbox
-                  id={`equipment-${item.id}`}
-                  checked={formData.equipment.includes(item.id)}
-                  onCheckedChange={(checked) => handleEquipmentChange(item.id, checked as boolean)}
-                  disabled={!item.available}
-                />
-                <Label 
-                  htmlFor={`equipment-${item.id}`}
-                  className={cn(
-                    "flex-1",
-                    item.available ? "text-gray-900" : "text-gray-400"
-                  )}
-                >
-                  {item.name}
-                  {!item.available && <span className="text-red-500 text-sm ml-2">(Indisponível)</span>}
-                </Label>
-              </div>
-            ))}
+            {isLoading ? (
+              <div className="text-sm text-gray-600">Carregando...</div>
+            ) : (
+              equipment.map((item) => {
+                const available = !!item.disponivel && !item.em_manutencao;
+                return (
+                  <div key={item.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <Checkbox
+                      id={`equipment-${item.id}`}
+                      checked={formData.equipment.includes(item.id)}
+                      onCheckedChange={(checked) => handleEquipmentChange(item.id, checked as boolean)}
+                      disabled={!available}
+                    />
+                    <Label 
+                      htmlFor={`equipment-${item.id}`}
+                      className={cn(
+                        "flex-1",
+                        available ? "text-gray-900" : "text-gray-400"
+                      )}
+                    >
+                      {item.nome}
+                      {!available && <span className="text-red-500 text-sm ml-2">(Indisponível)</span>}
+                    </Label>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 

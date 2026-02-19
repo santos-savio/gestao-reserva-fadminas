@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,104 +9,220 @@ import { Switch } from '@/components/ui/switch';
 import { Building2, Settings, Plus, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 const ResourcesManager = ({ user }) => {
   const [activeTab, setActiveTab] = useState('locations');
-  
-  const [locations, setLocations] = useState([
-    { id: 1, name: 'Igreja', capacity: 1000, available: true },
-    { id: 2, name: 'Auditório Sergio Cidadão', capacity: 150, available: true },
-    { id: 3, name: 'Refeitório', capacity: 300, available: true },
-    { id: 4, name: 'IDEC', capacity: 200, available: false },
-  ]);
 
-  const [equipment, setEquipment] = useState([
-    { id: 1, name: 'Computador', category: 'Equipamentos', available: true },
-    { id: 2, name: 'Telão/Projetor/TV', category: 'Equipamentos', available: true },
-    { id: 3, name: 'Mesa de Som', category: 'Equipamentos', available: true },
-    { id: 4, name: 'Caixa de Som', category: 'Equipamentos', available: true },
-    { id: 5, name: 'Microfone', category: 'Equipamentos', available: false },
-    { id: 6, name: 'Câmeras de gravação', category: 'Equipamentos', available: true },
-    { id: 7, name: 'Mídia (celular)', category: 'Equipamentos', available: true },
-    { id: 8, name: 'Iluminação', category: 'Equipamentos', available: true },
-    { id: 9, name: 'Passador', category: 'Adicionais', available: true },
-    { id: 10, name: 'Lapela', category: 'Adicionais', available: true },
-    { id: 11, name: 'Rádio', category: 'Adicionais', available: true },
-    { id: 12, name: 'Decoração', category: 'Adicionais', available: true },
-  ]);
+  const queryClient = useQueryClient();
 
-  const [newLocation, setNewLocation] = useState({ name: '', capacity: '' });
-  const [newEquipment, setNewEquipment] = useState({ name: '', category: 'Equipamentos' });
+  const [newLocation, setNewLocation] = useState({ name: '', description: '' });
+  const [newEquipment, setNewEquipment] = useState({ name: '', description: '' });
+
+  const {
+    data: locations = [],
+    isLoading: isLoadingLocations,
+  } = useQuery({
+    queryKey: ['locais'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('locais')
+        .select('*')
+        .order('nome', { ascending: true });
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const {
+    data: equipment = [],
+    isLoading: isLoadingEquipment,
+  } = useQuery({
+    queryKey: ['equipamentos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('equipamentos')
+        .select('*')
+        .order('nome', { ascending: true });
+
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const addLocationMutation = useMutation({
+    mutationFn: async (payload: { nome: string; descricao?: string | null }) => {
+      const { error } = await supabase.from('locais').insert({
+        nome: payload.nome,
+        descricao: payload.descricao ?? null,
+        disponivel: true,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['locais'] });
+      setNewLocation({ name: '', description: '' });
+      toast({
+        title: 'Local adicionado com sucesso!',
+        description: 'O local foi adicionado à lista de locais.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível adicionar o local.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateLocationMutation = useMutation({
+    mutationFn: async (payload: { id: string; disponivel: boolean }) => {
+      const { error } = await supabase
+        .from('locais')
+        .update({ disponivel: payload.disponivel })
+        .eq('id', payload.id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['locais'] });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível atualizar o local.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteLocationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('locais').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['locais'] });
+      toast({
+        title: 'Local removido',
+        description: 'O local foi removido com sucesso.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível remover o local.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const addEquipmentMutation = useMutation({
+    mutationFn: async (payload: { nome: string; descricao?: string | null }) => {
+      const { error } = await supabase.from('equipamentos').insert({
+        nome: payload.nome,
+        descricao: payload.descricao ?? null,
+        disponivel: true,
+        em_manutencao: false,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['equipamentos'] });
+      setNewEquipment({ name: '', description: '' });
+      toast({
+        title: 'Equipamento adicionado com sucesso!',
+        description: 'O equipamento foi adicionado à lista de equipamentos.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível adicionar o equipamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const updateEquipmentMutation = useMutation({
+    mutationFn: async (payload: { id: string; disponivel: boolean }) => {
+      const { error } = await supabase
+        .from('equipamentos')
+        .update({ disponivel: payload.disponivel })
+        .eq('id', payload.id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['equipamentos'] });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível atualizar o equipamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteEquipmentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('equipamentos').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['equipamentos'] });
+      toast({
+        title: 'Equipamento removido',
+        description: 'O equipamento foi removido com sucesso.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível remover o equipamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const equipmentsByCategory = useMemo(() => {
+    return {
+      Equipamentos: equipment,
+    };
+  }, [equipment]);
 
   const handleAddLocation = () => {
-    if (newLocation.name && newLocation.capacity) {
-      const id = Math.max(...locations.map(l => l.id)) + 1;
-      setLocations([...locations, {
-        id,
-        name: newLocation.name,
-        capacity: parseInt(newLocation.capacity),
-        available: true
-      }]);
-      setNewLocation({ name: '', capacity: '' });
-      toast({
-        title: "Local adicionado com sucesso!",
-        description: `${newLocation.name} foi adicionado à lista de locais.`,
-      });
-    }
+    if (!newLocation.name.trim()) return;
+    addLocationMutation.mutate({
+      nome: newLocation.name.trim(),
+      descricao: newLocation.description.trim() ? newLocation.description.trim() : null,
+    });
   };
 
   const handleAddEquipment = () => {
-    if (newEquipment.name && newEquipment.category) {
-      const id = Math.max(...equipment.map(e => e.id)) + 1;
-      setEquipment([...equipment, {
-        id,
-        name: newEquipment.name,
-        category: newEquipment.category,
-        available: true
-      }]);
-      setNewEquipment({ name: '', category: 'Equipamentos' });
-      toast({
-        title: "Equipamento adicionado com sucesso!",
-        description: `${newEquipment.name} foi adicionado à lista de equipamentos.`,
-      });
-    }
-  };
-
-  const toggleLocationAvailability = (id) => {
-    setLocations(locations.map(location => 
-      location.id === id 
-        ? { ...location, available: !location.available }
-        : location
-    ));
-  };
-
-  const toggleEquipmentAvailability = (id) => {
-    setEquipment(equipment.map(item => 
-      item.id === id 
-        ? { ...item, available: !item.available }
-        : item
-    ));
-  };
-
-  const removeLocation = (id) => {
-    setLocations(locations.filter(location => location.id !== id));
-    toast({
-      title: "Local removido",
-      description: "O local foi removido com sucesso.",
+    if (!newEquipment.name.trim()) return;
+    addEquipmentMutation.mutate({
+      nome: newEquipment.name.trim(),
+      descricao: newEquipment.description.trim() ? newEquipment.description.trim() : null,
     });
   };
 
-  const removeEquipment = (id) => {
-    setEquipment(equipment.filter(item => item.id !== id));
-    toast({
-      title: "Equipamento removido",
-      description: "O equipamento foi removido com sucesso.",
-    });
+  const toggleLocationAvailability = (id: string, current: boolean) => {
+    updateLocationMutation.mutate({ id, disponivel: !current });
   };
 
-  const equipmentsByCategory = {
-    'Equipamentos': equipment.filter(item => item.category === 'Equipamentos'),
-    'Adicionais': equipment.filter(item => item.category === 'Adicionais')
+  const toggleEquipmentAvailability = (id: string, current: boolean) => {
+    updateEquipmentMutation.mutate({ id, disponivel: !current });
+  };
+
+  const removeLocation = (id: string) => {
+    deleteLocationMutation.mutate(id);
+  };
+
+  const removeEquipment = (id: string) => {
+    deleteEquipmentMutation.mutate(id);
   };
 
   return (
@@ -169,16 +285,15 @@ const ResourcesManager = ({ user }) => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="location-capacity">Capacidade</Label>
+                      <Label htmlFor="location-description">Descrição</Label>
                       <Input
-                        id="location-capacity"
-                        type="number"
-                        value={newLocation.capacity}
-                        onChange={(e) => setNewLocation({ ...newLocation, capacity: e.target.value })}
-                        placeholder="Número de pessoas"
+                        id="location-description"
+                        value={newLocation.description}
+                        onChange={(e) => setNewLocation({ ...newLocation, description: e.target.value })}
+                        placeholder="(opcional)"
                       />
                     </div>
-                    <Button onClick={handleAddLocation} className="w-full">
+                    <Button onClick={handleAddLocation} className="w-full" disabled={addLocationMutation.isPending}>
                       Adicionar Local
                     </Button>
                   </div>
@@ -187,30 +302,38 @@ const ResourcesManager = ({ user }) => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {locations.map((location) => (
-                  <div key={location.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div>
-                      <h3 className="font-medium">{location.name}</h3>
-                      <p className="text-sm text-gray-600">Capacidade: {location.capacity} pessoas</p>
-                    </div>
+                {isLoadingLocations ? (
+                  <div className="text-sm text-gray-600">Carregando...</div>
+                ) : (
+                  locations.map((location) => (
+                    <div key={location.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div>
+                        <h3 className="font-medium">{location.nome}</h3>
+                        {location.descricao ? (
+                          <p className="text-sm text-gray-600">{location.descricao}</p>
+                        ) : null}
+                      </div>
                     <div className="flex items-center space-x-2">
-                      <Badge variant={location.available ? 'default' : 'secondary'}>
-                        {location.available ? 'Disponível' : 'Indisponível'}
+                      <Badge variant={location.disponivel ? 'default' : 'secondary'}>
+                        {location.disponivel ? 'Disponível' : 'Indisponível'}
                       </Badge>
                       <Switch
-                        checked={location.available}
-                        onCheckedChange={() => toggleLocationAvailability(location.id)}
+                        checked={!!location.disponivel}
+                        onCheckedChange={() => toggleLocationAvailability(location.id, !!location.disponivel)}
+                        disabled={updateLocationMutation.isPending}
                       />
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => removeLocation(location.id)}
+                        disabled={deleteLocationMutation.isPending}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  </div>
-                ))}
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
@@ -249,18 +372,15 @@ const ResourcesManager = ({ user }) => {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="equipment-category">Categoria</Label>
-                      <select
-                        id="equipment-category"
-                        value={newEquipment.category}
-                        onChange={(e) => setNewEquipment({ ...newEquipment, category: e.target.value })}
-                        className="w-full p-2 border rounded-md"
-                      >
-                        <option value="Equipamentos">Equipamentos</option>
-                        <option value="Adicionais">Adicionais</option>
-                      </select>
+                      <Label htmlFor="equipment-description">Descrição</Label>
+                      <Input
+                        id="equipment-description"
+                        value={newEquipment.description}
+                        onChange={(e) => setNewEquipment({ ...newEquipment, description: e.target.value })}
+                        placeholder="(opcional)"
+                      />
                     </div>
-                    <Button onClick={handleAddEquipment} className="w-full">
+                    <Button onClick={handleAddEquipment} className="w-full" disabled={addEquipmentMutation.isPending}>
                       Adicionar Equipamento
                     </Button>
                   </div>
@@ -269,37 +389,45 @@ const ResourcesManager = ({ user }) => {
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                {Object.entries(equipmentsByCategory).map(([category, items]) => (
-                  <div key={category}>
-                    <h3 className="font-medium text-lg mb-3 text-gray-900">{category}</h3>
-                    <div className="space-y-3">
-                      {items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                          <div>
-                            <h4 className="font-medium">{item.name}</h4>
-                            <p className="text-sm text-gray-600">Categoria: {item.category}</p>
+                {isLoadingEquipment ? (
+                  <div className="text-sm text-gray-600">Carregando...</div>
+                ) : (
+                  Object.entries(equipmentsByCategory).map(([category, items]) => (
+                    <div key={category}>
+                      <h3 className="font-medium text-lg mb-3 text-gray-900">{category}</h3>
+                      <div className="space-y-3">
+                        {items.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                            <div>
+                              <h4 className="font-medium">{item.nome}</h4>
+                              {item.descricao ? (
+                                <p className="text-sm text-gray-600">{item.descricao}</p>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Badge variant={item.disponivel ? 'default' : 'secondary'}>
+                                {item.disponivel ? 'Disponível' : 'Indisponível'}
+                              </Badge>
+                              <Switch
+                                checked={!!item.disponivel}
+                                onCheckedChange={() => toggleEquipmentAvailability(item.id, !!item.disponivel)}
+                                disabled={updateEquipmentMutation.isPending}
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => removeEquipment(item.id)}
+                                disabled={deleteEquipmentMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex items-center space-x-2">
-                            <Badge variant={item.available ? 'default' : 'secondary'}>
-                              {item.available ? 'Disponível' : 'Em manutenção'}
-                            </Badge>
-                            <Switch
-                              checked={item.available}
-                              onCheckedChange={() => toggleEquipmentAvailability(item.id)}
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeEquipment(item.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
