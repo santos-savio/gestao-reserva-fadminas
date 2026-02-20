@@ -169,8 +169,14 @@ const Auth = () => {
           
           <div className="mt-6 pt-4 border-t border-gray-200">
             <div className="text-sm text-muted-foreground text-center">
-              <p className="font-medium">Acesso restrito</p>
-              <p>Entre em contato com o administrador para criar sua conta</p>
+              <p className="font-medium">Ainda não tem uma conta?</p>
+              <button
+                type="button"
+                onClick={() => navigate('/signup')}
+                className="text-blue-600 hover:underline"
+              >
+                Crie uma conta
+              </button>
             </div>
           </div>
         </CardContent>
