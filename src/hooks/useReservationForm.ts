@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface FormData {
   date: Date | null;
@@ -17,6 +18,7 @@ export interface FormData {
 
 export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?: (date: Date | null) => void) => {
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<FormData>({
     date: null,
     time: '',
@@ -101,7 +103,7 @@ export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?:
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Comprehensive validation before submission
     if (!formData.date || !formData.time || !formData.duration || !formData.location) {
       toast({
@@ -111,6 +113,8 @@ export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?:
       });
       return;
     }
+
+    if (isSubmitting) return;
 
     // Validate text inputs
     if (!validateInput(formData.responsible) || !validateInput(formData.department)) {
@@ -141,38 +145,96 @@ export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?:
       return;
     }
 
-    // Sanitize all form data before submission
-    const sanitizedData = {
-      ...formData,
-      responsible: formData.responsible.trim(),
-      department: formData.department.trim(),
-      observations: formData.observations.trim(),
-      decorationDetails: formData.decorationDetails.trim()
-    };
+    setIsSubmitting(true);
 
-    toast({
-      title: "Reserva solicitada com sucesso!",
-      description: "Sua reserva será analisada pela equipe responsável.",
-    });
-    
-    // Reset form
-    setFormData({
-      date: null,
-      time: '',
-      duration: '',
-      location: '',
-      equipment: [],
-      additionals: [],
-      responsible: '',
-      department: '',
-      observations: '',
-      decorationDetails: ''
-    });
-    setStep(1);
-    
-    // Clear selected date in parent component
-    if (setSelectedDate) {
-      setSelectedDate(null);
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) throw new Error('Usuário não autenticado.');
+
+      const dateKey = format(formData.date, 'yyyy-MM-dd');
+      const dataISO = `${dateKey}T${formData.time}:00`;
+
+      const responsible = formData.responsible.trim();
+      const department = formData.department.trim();
+      const observations = formData.observations.trim();
+      const decorationDetails = formData.decorationDetails.trim();
+
+      const titulo = `Reserva - ${responsible}`;
+      const descricaoParts = [
+        `Departamento: ${department}`,
+        observations ? `Observações: ${observations}` : '',
+        decorationDetails ? `Decoração: ${decorationDetails}` : '',
+        formData.duration ? `Duração (h): ${formData.duration}` : '',
+      ].filter(Boolean);
+
+      const descricao = descricaoParts.length ? descricaoParts.join('\n') : null;
+
+      const { data: createdEvento, error: eventoError } = await supabase
+        .from('eventos')
+        .insert({
+          titulo,
+          data: dataISO,
+          descricao,
+          status: 'pending',
+          local_id: formData.location,
+          criado_por: user.id,
+        })
+        .select('id')
+        .single();
+
+      if (eventoError) throw eventoError;
+
+      if (formData.equipment.length > 0) {
+        const relations = formData.equipment.map((equipamentoId) => ({
+          evento_id: createdEvento.id,
+          equipamento_id: equipamentoId,
+        }));
+
+        const { error: relError } = await supabase
+          .from('eventos_equipamentos')
+          .insert(relations);
+
+        if (relError) throw relError;
+      }
+
+      toast({
+        title: 'Reserva solicitada com sucesso!',
+        description: 'Sua reserva foi registrada e será analisada pela equipe responsável.',
+      });
+
+      // Reset form
+      setFormData({
+        date: null,
+        time: '',
+        duration: '',
+        location: '',
+        equipment: [],
+        additionals: [],
+        responsible: '',
+        department: '',
+        observations: '',
+        decorationDetails: ''
+      });
+      setStep(1);
+
+      // Clear selected date in parent component
+      if (setSelectedDate) {
+        setSelectedDate(null);
+      }
+    } catch (error: any) {
+      console.error('Erro ao criar reserva:', error);
+      toast({
+        title: 'Erro ao criar reserva',
+        description: error?.message || 'Não foi possível salvar a reserva no sistema.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -196,6 +258,7 @@ export const useReservationForm = (selectedDate?: Date | null, setSelectedDate?:
 
   return {
     step,
+    isSubmitting,
     formData,
     setFormData,
     checkConflict,

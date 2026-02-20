@@ -8,7 +8,8 @@ interface FormNavigationProps {
   isDecorationSelected: () => boolean;
   onPrevious: () => void;
   onNext: () => void;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
+  isSubmitting?: boolean;
 }
 
 export const FormNavigation = ({
@@ -18,8 +19,10 @@ export const FormNavigation = ({
   isDecorationSelected,
   onPrevious,
   onNext,
-  onSubmit
+  onSubmit,
+  isSubmitting = false
 }: FormNavigationProps) => {
+
   const isStepValid = () => {
     switch (step) {
       case 1:
@@ -40,7 +43,7 @@ export const FormNavigation = ({
       <Button 
         variant="outline" 
         onClick={onPrevious}
-        disabled={step === 1}
+        disabled={step === 1 || isSubmitting}
       >
         Anterior
       </Button>
@@ -48,13 +51,13 @@ export const FormNavigation = ({
       {step < totalSteps ? (
         <Button 
           onClick={onNext}
-          disabled={!isStepValid()}
+          disabled={!isStepValid() || isSubmitting}
         >
           Próximo
         </Button>
       ) : (
-        <Button onClick={onSubmit} className="bg-green-600 hover:bg-green-700">
-          Confirmar Reserva
+        <Button onClick={onSubmit} className="bg-green-600 hover:bg-green-700" disabled={isSubmitting}>
+          {isSubmitting ? 'Enviando...' : 'Confirmar Reserva'}
         </Button>
       )}
     </div>

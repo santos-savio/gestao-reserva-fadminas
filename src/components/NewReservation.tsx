@@ -18,6 +18,7 @@ interface NewReservationProps {
 const NewReservation = ({ user, selectedDate, setSelectedDate }: NewReservationProps) => {
   const {
     step,
+    isSubmitting,
     formData,
     setFormData,
     isDateUnavailable,
@@ -91,6 +92,7 @@ const NewReservation = ({ user, selectedDate, setSelectedDate }: NewReservationP
             onPrevious={prevStep}
             onNext={nextStep}
             onSubmit={handleSubmit}
+            isSubmitting={isSubmitting}
           />
         </CardContent>
       </Card>
