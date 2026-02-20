@@ -18,12 +18,13 @@ type Perfil = {
   tipo_usuario: string;
 };
 
+
 const UsersManager = ({ user }: { user: any }) => {
   const [editingUser, setEditingUser] = useState<Perfil | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: users = [], isLoading } = useQuery({
+  const { data: users = [], isLoading, error } = useQuery({
     queryKey: ['perfis'],
     queryFn: async (): Promise<Perfil[]> => {
       const { data, error } = await supabase
@@ -34,6 +35,14 @@ const UsersManager = ({ user }: { user: any }) => {
       return data || [];
     },
   });
+
+  if (error) {
+    return (
+      <div className="text-center py-12 text-red-600">
+        Erro ao carregar usuários: {error.message}
+      </div>
+    );
+  }
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, changes }: { id: string; changes: Partial<Perfil> }) => {
@@ -59,7 +68,11 @@ const UsersManager = ({ user }: { user: any }) => {
   };
 
   const handleAddUser = () => {
-    toast({ title: 'Criação de usuário desabilitada', description: 'Use o Supabase Dashboard para criar usuários no Auth.', variant: 'destructive' });
+    toast({
+      title: 'Criação de usuário',
+      description: 'Para criar contas (Auth), use o cadastro (/signup) ou o Supabase Dashboard (Authentication > Users).',
+      variant: 'destructive'
+    });
   };
 
   const removeUser = (id: string) => {
@@ -70,10 +83,10 @@ const UsersManager = ({ user }: { user: any }) => {
     toast({ title: 'Remoção desabilitada', description: 'Use o Supabase Dashboard para remover usuários.', variant: 'destructive' });
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = () => {
     return (
-      <Badge variant={status === 'active' ? 'default' : 'secondary'}>
-        {status === 'active' ? 'Ativo' : 'Inativo'}
+      <Badge variant="default">
+        Ativo
       </Badge>
     );
   };
@@ -110,7 +123,7 @@ const UsersManager = ({ user }: { user: any }) => {
           </CardTitle>
           <Dialog>
             <DialogTrigger asChild>
-              <Button disabled>
+              <Button>
                 <Plus className="h-4 w-4 mr-2" />
                 Adicionar Usuário
               </Button>
@@ -125,22 +138,22 @@ const UsersManager = ({ user }: { user: any }) => {
               <div className="space-y-4">
                 <div>
                   <Label>Nome Completo</Label>
-                  <Input disabled placeholder="Desabilitado" />
+                  <Input disabled placeholder="Use /signup ou o Dashboard" />
                 </div>
                 <div>
                   <Label>Email</Label>
-                  <Input disabled placeholder="Desabilitado" />
+                  <Input disabled placeholder="Use /signup ou o Dashboard" />
                 </div>
                 <div>
                   <Label>Função</Label>
                   <Select disabled>
                     <SelectTrigger>
-                      <SelectValue placeholder="Desabilitado" />
+                      <SelectValue placeholder="Definida no perfil" />
                     </SelectTrigger>
                   </Select>
                 </div>
-                <Button onClick={handleAddUser} className="w-full" disabled>
-                  Adicionar Usuário (desabilitado)
+                <Button onClick={handleAddUser} className="w-full">
+                  Como adicionar usuário
                 </Button>
               </div>
             </DialogContent>
@@ -148,25 +161,25 @@ const UsersManager = ({ user }: { user: any }) => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {users.map((userItem) => (
+            {users.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                Nenhum usuário encontrado.
+              </div>
+            ) : (
+              users.map((userItem) => (
               <Card key={userItem.id} className="bg-gray-50">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="font-medium text-lg">{userItem.nome}</h3>
+                        <h3 className="font-medium text-lg">{userItem.nome || '(Sem nome)'}</h3>
+                      </div>
+                      <div className="flex items-center space-x-3">
                         {getRoleBadge(userItem.tipo_usuario)}
-                        {getStatusBadge('active')}
+                        {getStatusBadge()}
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
-                        <div>
-                          <strong>ID:</strong> {userItem.id}
-                        </div>
-                        <div>
-                          <strong>Tipo:</strong> {userItem.tipo_usuario}
-                        </div>
-                      </div>
+                      
                     </div>
                     
                     <div className="flex items-center space-x-2 ml-4">
@@ -197,12 +210,11 @@ const UsersManager = ({ user }: { user: any }) => {
                                 />
                               </div>
                               <div>
-                                <Label>Email</Label>
+                                <Label>ID</Label>
                                 <Input
-                                  type="email"
                                   value={editingUser.id}
                                   disabled
-                                  placeholder="ID do perfil (não editável)"
+                                  placeholder="ID (não editável)"
                                 />
                               </div>
                               <div>
@@ -243,7 +255,8 @@ const UsersManager = ({ user }: { user: any }) => {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>
