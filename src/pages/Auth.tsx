@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,11 +6,35 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Eye, EyeOff, Building2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      if (session) {
+        navigate('/', { replace: true });
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        navigate('/', { replace: true });
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   // Login state
   const [loginEmail, setLoginEmail] = useState("");
@@ -21,16 +45,41 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPassword,
+      const email = loginEmail.trim();
+      const password = loginPassword;
+
+      if (!email || !password) {
+        toast({
+          title: "Erro de login",
+          description: "Informe email e senha.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
       if (error) {
+        console.error('Erro signInWithPassword:', error);
         if (error.message.includes("Invalid login credentials")) {
           toast({
             title: "Erro de login",
             description: "Email ou senha incorretos.",
+            variant: "destructive",
+          });
+        } else if (error.message.toLowerCase().includes("email not confirmed")) {
+          toast({
+            title: "Email não confirmado",
+            description: "Confirme o email no Supabase (Auth > Users) ou desative a exigência de confirmação nas configurações de Auth.",
+            variant: "destructive",
+          });
+        } else if (error.message.toLowerCase().includes("email logins are disabled")) {
+          toast({
+            title: "Login por email desativado",
+            description: "No Supabase, habilite o provider de Email (Authentication > Providers).",
             variant: "destructive",
           });
         } else {
@@ -45,8 +94,13 @@ const Auth = () => {
           title: "Login realizado com sucesso!",
           description: "Redirecionando para o dashboard...",
         });
+
+        if (data.session) {
+          navigate('/', { replace: true });
+        }
       }
     } catch (error) {
+      console.error('Erro inesperado no login:', error);
       toast({
         title: "Erro",
         description: "Ocorreu um erro inesperado.",

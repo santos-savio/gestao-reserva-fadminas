@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -28,53 +28,84 @@ const Index = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  const fetchUserProfile = useCallback(async (userId: string) => {
+    const { data: profile, error } = await supabase
+      .from('perfis')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro ao buscar perfil:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar o perfil do usuário.",
+        variant: "destructive",
+      });
+      return null;
+    }
+
+    return profile ?? null;
+  }, [toast]);
+
   useEffect(() => {
-    // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Defer profile fetch to avoid recursion
-          setTimeout(async () => {
-            const { data: profile, error } = await supabase
-              .from('perfis')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            
-            if (error) {
-              console.error('Erro ao buscar perfil:', error);
-              toast({
-                title: "Erro",
-                description: "Não foi possível carregar o perfil do usuário.",
-                variant: "destructive",
-              });
-            } else if (profile) {
-              setUserProfile(profile);
-            } else {
-              // Perfil não encontrado, redirecionar para criação
-              navigate('/auth');
-            }
-          }, 0);
-        } else {
-          setUserProfile(null);
-          navigate('/auth');
-        }
+    let mounted = true;
+
+    const applySession = async (nextSession: Session | null) => {
+      if (!mounted) return;
+
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (!nextSession?.user) {
+        setUserProfile(null);
         setLoading(false);
+        navigate('/auth', { replace: true });
+        return;
+      }
+
+      const profile = await fetchUserProfile(nextSession.user.id);
+      if (!mounted) return;
+
+      if (!profile) {
+        toast({
+          title: "Acesso não autorizado",
+          description: "Seu usuário não possui perfil cadastrado ou não tem permissão para acessar.",
+          variant: "destructive",
+        });
+
+        await supabase.auth.signOut();
+        setUserProfile(null);
+        setLoading(false);
+        navigate('/auth', { replace: true });
+        return;
+      }
+
+      setUserProfile(profile);
+      setLoading(false);
+    };
+
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Erro ao recuperar sessão:', error);
+        applySession(null);
+        return;
+      }
+
+      applySession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, nextSession) => {
+        applySession(nextSession);
       }
     );
 
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate, toast]);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchUserProfile, navigate, toast]);
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -98,10 +129,7 @@ const Index = () => {
     );
   }
 
-  if (!user || !userProfile) {
-    navigate('/auth');
-    return null;
-  }
+  if (!user || !userProfile) return null;
 
   const isAdmin = userProfile.tipo_usuario === 'admin_equipamento' || userProfile.tipo_usuario === 'super_admin';
 
