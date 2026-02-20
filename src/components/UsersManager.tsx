@@ -1,134 +1,104 @@
 
 import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Plus, Edit, Trash2, Mail, Phone } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Users, Plus, Edit, Trash2 } from 'lucide-react';
 
-const UsersManager = ({ user }) => {
-  const [users, setUsers] = useState([
-    { 
-      id: 1, 
-      name: 'Admin Sistema', 
-      email: 'admin@empresa.com', 
-      role: 'super_admin', 
-      department: 'TI',
-      phone: '(11) 99999-9999',
-      status: 'active'
-    },
-    { 
-      id: 2, 
-      name: 'Maria Silva', 
-      email: 'gerente@empresa.com', 
-      role: 'admin', 
-      department: 'Recursos Humanos',
-      phone: '(11) 88888-8888',
-      status: 'active'
-    },
-    { 
-      id: 3, 
-      name: 'João Santos', 
-      email: 'usuario@empresa.com', 
-      role: 'user', 
-      department: 'Marketing',
-      phone: '(11) 77777-7777',
-      status: 'active'
-    },
-    { 
-      id: 4, 
-      name: 'Ana Costa', 
-      email: 'ana@empresa.com', 
-      role: 'user', 
-      department: 'Vendas',
-      phone: '(11) 66666-6666',
-      status: 'inactive'
-    },
-  ]);
+type Perfil = {
+  id: string;
+  nome: string;
+  tipo_usuario: string;
+};
 
-  const [newUser, setNewUser] = useState({
-    name: '',
-    email: '',
-    role: 'user',
-    department: '',
-    phone: ''
+const UsersManager = ({ user }: { user: any }) => {
+  const [editingUser, setEditingUser] = useState<Perfil | null>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['perfis'],
+    queryFn: async (): Promise<Perfil[]> => {
+      const { data, error } = await supabase
+        .from('perfis')
+        .select('id, nome, tipo_usuario')
+        .order('nome');
+      if (error) throw error;
+      return data || [];
+    },
   });
 
-  const [editingUser, setEditingUser] = useState(null);
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, changes }: { id: string; changes: Partial<Perfil> }) => {
+      const { error } = await supabase
+        .from('perfis')
+        .update(changes)
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['perfis'] });
+      toast({ title: 'Usuário atualizado' });
+      setEditingUser(null);
+    },
+    onError: (err) => {
+      toast({ title: 'Erro ao atualizar', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const handleEditUser = (changes: Partial<Perfil>) => {
+    if (!editingUser) return;
+    updateMutation.mutate({ id: editingUser.id, changes });
+  };
 
   const handleAddUser = () => {
-    if (newUser.name && newUser.email && newUser.department) {
-      const id = Math.max(...users.map(u => u.id)) + 1;
-      setUsers([...users, {
-        ...newUser,
-        id,
-        status: 'active'
-      }]);
-      setNewUser({
-        name: '',
-        email: '',
-        role: 'user',
-        department: '',
-        phone: ''
-      });
-      toast({
-        title: "Usuário adicionado com sucesso!",
-        description: `${newUser.name} foi adicionado ao sistema.`,
-      });
+    toast({ title: 'Criação de usuário desabilitada', description: 'Use o Supabase Dashboard para criar usuários no Auth.', variant: 'destructive' });
+  };
+
+  const removeUser = (id: string) => {
+    if (id === user?.id) {
+      toast({ title: 'Você não pode remover a si mesmo', variant: 'destructive' });
+      return;
     }
+    toast({ title: 'Remoção desabilitada', description: 'Use o Supabase Dashboard para remover usuários.', variant: 'destructive' });
   };
 
-  const handleEditUser = (userData) => {
-    setUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...userData } : u));
-    setEditingUser(null);
-    toast({
-      title: "Usuário atualizado!",
-      description: "As informações do usuário foram atualizadas.",
-    });
-  };
-
-  const toggleUserStatus = (id) => {
-    setUsers(users.map(u => 
-      u.id === id 
-        ? { ...u, status: u.status === 'active' ? 'inactive' : 'active' }
-        : u
-    ));
-  };
-
-  const removeUser = (id) => {
-    setUsers(users.filter(u => u.id !== id));
-    toast({
-      title: "Usuário removido",
-      description: "O usuário foi removido do sistema.",
-    });
-  };
-
-  const getRoleBadge = (role) => {
-    const roles = {
-      super_admin: { variant: 'default', className: 'bg-purple-500 hover:bg-purple-600', text: 'Super Admin' },
-      admin: { variant: 'default', className: 'bg-blue-500 hover:bg-blue-600', text: 'Admin' },
-      user: { variant: 'secondary', text: 'Usuário' }
-    };
-    
-    const config = roles[role];
-    return (
-      <Badge variant={config.variant} className={config.className}>
-        {config.text}
-      </Badge>
-    );
-  };
-
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (status: string) => {
     return (
       <Badge variant={status === 'active' ? 'default' : 'secondary'}>
         {status === 'active' ? 'Ativo' : 'Inativo'}
       </Badge>
     );
   };
+
+  const getRoleBadge = (role: string) => {
+    const roles = {
+      super_admin: { variant: 'default' as const, className: 'bg-purple-500 hover:bg-purple-600', text: 'Super Admin' },
+      admin_equipamento: { variant: 'default' as const, className: 'bg-blue-500 hover:bg-blue-600', text: 'Admin Equipamento' },
+      usuario: { variant: 'secondary' as const, text: 'Usuário' }
+    };
+    const config = roles[role as keyof typeof roles] || roles.usuario;
+    return (
+      <Badge variant={config.variant} className={config.variant === 'default' ? config.className : undefined}>
+        {config.text}
+      </Badge>
+    );
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -138,73 +108,39 @@ const UsersManager = ({ user }) => {
             <Users className="h-5 w-5" />
             <span>Gerenciar Usuários</span>
           </CardTitle>
-          
           <Dialog>
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled>
                 <Plus className="h-4 w-4 mr-2" />
                 Adicionar Usuário
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Adicionar Novo Usuário</DialogTitle>
+                <DialogTitle>Adicionar Usuário</DialogTitle>
+                <DialogDescription>
+                  Para criar novos usuários, use o Supabase Dashboard (Authentication &gt; Users) e depois crie o perfil correspondente aqui.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="user-name">Nome Completo</Label>
-                  <Input
-                    id="user-name"
-                    value={newUser.name}
-                    onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                    placeholder="Nome completo do usuário"
-                  />
+                  <Label>Nome Completo</Label>
+                  <Input disabled placeholder="Desabilitado" />
                 </div>
                 <div>
-                  <Label htmlFor="user-email">Email</Label>
-                  <Input
-                    id="user-email"
-                    type="email"
-                    value={newUser.email}
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                    placeholder="email@empresa.com"
-                  />
+                  <Label>Email</Label>
+                  <Input disabled placeholder="Desabilitado" />
                 </div>
                 <div>
-                  <Label htmlFor="user-role">Função</Label>
-                  <Select value={newUser.role} onValueChange={(value) => setNewUser({ ...newUser, role: value })}>
+                  <Label>Função</Label>
+                  <Select disabled>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Desabilitado" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user">Usuário</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                      {user.role === 'super_admin' && (
-                        <SelectItem value="super_admin">Super Admin</SelectItem>
-                      )}
-                    </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label htmlFor="user-department">Departamento</Label>
-                  <Input
-                    id="user-department"
-                    value={newUser.department}
-                    onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
-                    placeholder="Ex: Marketing, TI, RH"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="user-phone">Telefone</Label>
-                  <Input
-                    id="user-phone"
-                    value={newUser.phone}
-                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
-                    placeholder="(11) 99999-9999"
-                  />
-                </div>
-                <Button onClick={handleAddUser} className="w-full">
-                  Adicionar Usuário
+                <Button onClick={handleAddUser} className="w-full" disabled>
+                  Adicionar Usuário (desabilitado)
                 </Button>
               </div>
             </DialogContent>
@@ -218,35 +154,22 @@ const UsersManager = ({ user }) => {
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="font-medium text-lg">{userItem.name}</h3>
-                        {getRoleBadge(userItem.role)}
-                        {getStatusBadge(userItem.status)}
+                        <h3 className="font-medium text-lg">{userItem.nome}</h3>
+                        {getRoleBadge(userItem.tipo_usuario)}
+                        {getStatusBadge('active')}
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-gray-600">
-                        <div className="flex items-center">
-                          <Mail className="h-4 w-4 mr-1" />
-                          {userItem.email}
-                        </div>
-                        <div className="flex items-center">
-                          <Phone className="h-4 w-4 mr-1" />
-                          {userItem.phone}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
+                        <div>
+                          <strong>ID:</strong> {userItem.id}
                         </div>
                         <div>
-                          <strong>Depto:</strong> {userItem.department}
+                          <strong>Tipo:</strong> {userItem.tipo_usuario}
                         </div>
                       </div>
                     </div>
                     
                     <div className="flex items-center space-x-2 ml-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleUserStatus(userItem.id)}
-                      >
-                        {userItem.status === 'active' ? 'Desativar' : 'Ativar'}
-                      </Button>
-                      
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button
@@ -260,58 +183,48 @@ const UsersManager = ({ user }) => {
                         <DialogContent className="max-w-md">
                           <DialogHeader>
                             <DialogTitle>Editar Usuário</DialogTitle>
+                            <DialogDescription>
+                              Altere nome ou tipo do usuário. Email não pode ser editado aqui.
+                            </DialogDescription>
                           </DialogHeader>
                           {editingUser && (
                             <div className="space-y-4">
                               <div>
                                 <Label>Nome Completo</Label>
                                 <Input
-                                  value={editingUser.name}
-                                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                                  value={editingUser.nome}
+                                  onChange={(e) => setEditingUser({ ...editingUser, nome: e.target.value })}
                                 />
                               </div>
                               <div>
                                 <Label>Email</Label>
                                 <Input
                                   type="email"
-                                  value={editingUser.email}
-                                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                                  value={editingUser.id}
+                                  disabled
+                                  placeholder="ID do perfil (não editável)"
                                 />
                               </div>
                               <div>
                                 <Label>Função</Label>
-                                <Select 
-                                  value={editingUser.role} 
-                                  onValueChange={(value) => setEditingUser({ ...editingUser, role: value })}
+                                <Select
+                                  value={editingUser.tipo_usuario}
+                                  onValueChange={(value) => setEditingUser({ ...editingUser, tipo_usuario: value })}
                                 >
                                   <SelectTrigger>
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="user">Usuário</SelectItem>
-                                    <SelectItem value="admin">Admin</SelectItem>
-                                    {user.role === 'super_admin' && (
+                                    <SelectItem value="usuario">Usuário</SelectItem>
+                                    <SelectItem value="admin_equipamento">Admin Equipamento</SelectItem>
+                                    {user?.user_metadata?.role === 'super_admin' && (
                                       <SelectItem value="super_admin">Super Admin</SelectItem>
                                     )}
                                   </SelectContent>
                                 </Select>
                               </div>
-                              <div>
-                                <Label>Departamento</Label>
-                                <Input
-                                  value={editingUser.department}
-                                  onChange={(e) => setEditingUser({ ...editingUser, department: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <Label>Telefone</Label>
-                                <Input
-                                  value={editingUser.phone}
-                                  onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                                />
-                              </div>
-                              <Button onClick={() => handleEditUser(editingUser)} className="w-full">
-                                Salvar Alterações
+                              <Button onClick={() => handleEditUser(editingUser)} className="w-full" disabled={updateMutation.isPending}>
+                                {updateMutation.isPending ? 'Salvando...' : 'Salvar Alterações'}
                               </Button>
                             </div>
                           )}
@@ -322,7 +235,7 @@ const UsersManager = ({ user }) => {
                         variant="outline"
                         size="sm"
                         onClick={() => removeUser(userItem.id)}
-                        disabled={userItem.id === user.id}
+                        disabled={userItem.id === user?.id}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>

@@ -1,11 +1,39 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Calendar, Building2, Settings, Clock, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+
+type Evento = {
+  id: string;
+  titulo: string;
+  data: string;
+  descricao: string | null;
+  status: string;
+  local_id: string | null;
+  criado_por: string | null;
+};
+
+type Local = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+};
+
+type Perfil = {
+  id: string;
+  nome: string;
+};
+
+interface EventoComRelacoes extends Evento {
+  local: Local | null;
+  responsavel_perfil: Perfil | null;
+}
 
 const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -15,77 +43,89 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
   const [selectedStatsType, setSelectedStatsType] = useState('');
   const { toast } = useToast();
 
-  // Dados simulados expandidos
-  const stats = {
-    totalReservations: 24,
-    pendingApprovals: 3,
-    activeReservations: 8
-  };
-
-  // Reservas mockadas para diferentes datas
-  const mockReservations = {
-    '2025-01-08': [
-      { id: 1, title: 'Culto Matutino', location: 'Igreja', time: '09:00', responsible: 'Pastor Silva', status: 'approved' },
-      { id: 2, title: 'Reunião da Diretoria', location: 'Auditório Sergio Cidadão', time: '14:00', responsible: 'Maria Santos', status: 'approved' }
-    ],
-    '2025-01-10': [
-      { id: 3, title: 'Jantar Beneficente', location: 'Refeitório', time: '19:00', responsible: 'João Costa', status: 'pending' }
-    ],
-    '2025-01-12': [
-      { id: 4, title: 'Palestra sobre Sustentabilidade', location: 'IDEC', time: '16:00', responsible: 'Ana Oliveira', status: 'approved' },
-      { id: 5, title: 'Ensaio do Coral', location: 'Igreja', time: '20:00', responsible: 'Carlos Music', status: 'approved' }
-    ],
-    '2025-01-15': [
-      { id: 6, title: 'Treinamento de Primeiros Socorros', location: 'Auditório Sergio Cidadão', time: '08:00', responsible: 'Dra. Paula', status: 'approved' }
-    ]
-  };
-
-  // Dados detalhados para os pop-ups dos cards
-  const [reservationsData, setReservationsData] = useState({
-    total: [
-      { id: 1, title: 'Culto Matutino', location: 'Igreja', date: '08/01/2025', time: '09:00', status: 'approved' },
-      { id: 2, title: 'Reunião da Diretoria', location: 'Auditório Sergio Cidadão', date: '08/01/2025', time: '14:00', status: 'approved' },
-      { id: 3, title: 'Jantar Beneficente', location: 'Refeitório', date: '10/01/2025', time: '19:00', status: 'pending' },
-      { id: 4, title: 'Palestra sobre Sustentabilidade', location: 'IDEC', date: '12/01/2025', time: '16:00', status: 'approved' },
-      { id: 5, title: 'Ensaio do Coral', location: 'Igreja', date: '12/01/2025', time: '20:00', status: 'approved' },
-      { id: 6, title: 'Treinamento de Primeiros Socorros', location: 'Auditório Sergio Cidadão', date: '15/01/2025', time: '08:00', status: 'approved' },
-      { id: 7, title: 'Reunião de Planejamento', location: 'IDEC', date: '18/01/2025', time: '10:00', status: 'rejected' },
-      { id: 8, title: 'Workshop de Liderança', location: 'Refeitório', date: '20/01/2025', time: '15:00', status: 'pending' }
-    ],
-    pending: [
-      { id: 3, title: 'Jantar Beneficente', location: 'Refeitório', date: '10/01/2025', time: '19:00', status: 'pending', responsible: 'João Costa' },
-      { id: 8, title: 'Workshop de Liderança', location: 'Refeitório', date: '20/01/2025', time: '15:00', status: 'pending', responsible: 'Ana Silva' },
-      { id: 9, title: 'Apresentação Cultural', location: 'Igreja', date: '25/01/2025', time: '17:00', status: 'pending', responsible: 'Pedro Santos' }
-    ],
-    active: [
-      { id: 1, title: 'Culto Matutino', location: 'Igreja', date: '08/01/2025', time: '09:00', status: 'approved' },
-      { id: 2, title: 'Reunião da Diretoria', location: 'Auditório Sergio Cidadão', date: '08/01/2025', time: '14:00', status: 'approved' },
-      { id: 4, title: 'Palestra sobre Sustentabilidade', location: 'IDEC', date: '12/01/2025', time: '16:00', status: 'approved' },
-      { id: 5, title: 'Ensaio do Coral', location: 'Igreja', date: '12/01/2025', time: '20:00', status: 'approved' },
-      { id: 6, title: 'Treinamento de Primeiros Socorros', location: 'Auditório Sergio Cidadão', date: '15/01/2025', time: '08:00', status: 'approved' }
-    ]
+  // Query para estatísticas
+  const { data: stats = { total: 0, pending: 0, active: 0 } } = useQuery({
+    queryKey: ['dashboard-stats'],
+    queryFn: async () => {
+      const { data: eventos, error } = await supabase
+        .from('eventos')
+        .select('status');
+      if (error) throw error;
+      const total = eventos?.length || 0;
+      const pending = eventos?.filter(e => e.status === 'pending').length || 0;
+      const active = eventos?.filter(e => e.status === 'approved').length || 0;
+      return { total, pending, active };
+    },
   });
 
-  const recentReservations = [
-    { id: 1, location: 'Igreja', date: '2025-01-08', time: '09:00', status: 'approved' },
-    { id: 2, location: 'Auditório Sergio Cidadão', date: '2025-01-10', time: '14:00', status: 'pending' },
-    { id: 3, location: 'IDEC', date: '2025-01-12', time: '16:00', status: 'approved' },
-  ];
+  // Query para eventos com relações (usado em vários lugares)
+  const { data: eventosComRelacoes = [] } = useQuery({
+    queryKey: ['eventos-dashboard-relacoes'],
+    queryFn: async (): Promise<EventoComRelacoes[]> => {
+      const { data: eventos, error } = await supabase
+        .from('eventos')
+        .select(`
+          id,
+          titulo,
+          data,
+          descricao,
+          status,
+          local_id,
+          criado_por,
+          locais!inner(id, nome, descricao)
+        `)
+        .order('data', { ascending: false });
+      if (error) throw error;
 
-  const upcomingEvents = [
-    { id: 1, title: 'Culto Matutino', location: 'Igreja', date: '08/01/2025', time: '09:00' },
-    { id: 2, title: 'Reunião da Diretoria', location: 'Auditório Sergio Cidadão', date: '10/01/2025', time: '14:00' },
-    { id: 3, title: 'Palestra sobre Sustentabilidade', location: 'IDEC', date: '12/01/2025', time: '16:00' },
-  ];
+      // Buscar perfis dos responsáveis
+      const criadosPorIds = [...new Set(eventos.map(e => e.criado_por).filter(Boolean))];
+      const { data: perfis } = await supabase
+        .from('perfis')
+        .select('id, nome')
+        .in('id', criadosPorIds);
+      const perfilMap = (perfis || []).reduce((acc, p) => { acc[p.id] = p; return acc; }, {} as Record<string, Perfil>);
+
+      return eventos.map((evento: any): EventoComRelacoes => ({
+        id: evento.id,
+        titulo: evento.titulo,
+        data: evento.data,
+        descricao: evento.descricao,
+        status: evento.status,
+        local_id: evento.local_id,
+        criado_por: evento.criado_por,
+        local: evento.locais as Local | null,
+        responsavel_perfil: evento.criado_por ? (perfilMap[evento.criado_por] || null) : null
+      }));
+    },
+  });
+
+  // Dados derivados
+  const upcomingEvents = eventosComRelacoes
+    .filter(e => new Date(e.data) >= new Date())
+    .slice(0, 3);
+
+  const recentReservations = eventosComRelacoes.slice(0, 3);
+
+  const reservationsData = {
+    total: eventosComRelacoes,
+    pending: eventosComRelacoes.filter(e => e.status === 'pending'),
+    active: eventosComRelacoes.filter(e => e.status === 'approved')
+  };
+
+  // Agrupar eventos por data para o calendário
+  const eventosPorData = eventosComRelacoes.reduce((acc, evento) => {
+    const dateKey = new Date(evento.data).toISOString().split('T')[0];
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(evento);
+    return acc;
+  }, {} as Record<string, EventoComRelacoes[]>);
 
   // Função auxiliar para determinar o tipo de reservas de um dia
   const getReservationTypes = (day) => {
     const dateKey = formatDateKey(currentDate.getFullYear(), currentDate.getMonth(), day);
-    const dayReservations = mockReservations[dateKey] || [];
-    
+    const dayReservations = eventosPorData[dateKey] || [];
     const hasActive = dayReservations.some(res => res.status === 'approved');
     const hasPending = dayReservations.some(res => res.status === 'pending');
-    
     return { hasActive, hasPending };
   };
 
@@ -124,15 +164,14 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
 
   const hasReservations = (day) => {
     const dateKey = formatDateKey(currentDate.getFullYear(), currentDate.getMonth(), day);
-    return mockReservations[dateKey] && mockReservations[dateKey].length > 0;
+    return eventosPorData[dateKey] && eventosPorData[dateKey].length > 0;
   };
 
   const handleDateClick = (day) => {
     const dateKey = formatDateKey(currentDate.getFullYear(), currentDate.getMonth(), day);
-    const dayReservations = mockReservations[dateKey] || [];
-    
-    setSelectedDate({ 
-      day, 
+    const dayReservations = eventosPorData[dateKey] || [];
+    setSelectedDate({
+      day,
       reservations: dayReservations,
       dateKey,
       fullDate: new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
@@ -213,40 +252,12 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
     setShowStatsModal(true);
   };
 
-  // Função para aprovar reserva
-  const handleApproveReservation = (reservationId) => {
-    setReservationsData(prev => ({
-      ...prev,
-      pending: prev.pending.map(res => 
-        res.id === reservationId ? { ...res, status: 'approved' } : res
-      ).filter(res => res.status === 'pending'),
-      total: prev.total.map(res => 
-        res.id === reservationId ? { ...res, status: 'approved' } : res
-      ),
-      active: [...prev.active, prev.pending.find(res => res.id === reservationId && { ...res, status: 'approved' })].filter(Boolean)
-    }));
-
-    toast({
-      title: "Reserva Aprovada",
-      description: "A reserva foi aprovada com sucesso!",
-    });
+  // Função para aprovar/rejeitar reserva (placeholder)
+  const handleApproveReservation = (reservationId: string) => {
+    toast({ title: 'Aprovação não implementada', description: 'Use a aba Reservas para aprovar/rejeitar.' });
   };
-
-  // Função para rejeitar reserva
-  const handleRejectReservation = (reservationId) => {
-    setReservationsData(prev => ({
-      ...prev,
-      pending: prev.pending.filter(res => res.id !== reservationId),
-      total: prev.total.map(res => 
-        res.id === reservationId ? { ...res, status: 'rejected' } : res
-      )
-    }));
-
-    toast({
-      title: "Reserva Rejeitada",
-      description: "A reserva foi rejeitada.",
-      variant: "destructive"
-    });
+  const handleRejectReservation = (reservationId: string) => {
+    toast({ title: 'Rejeição não implementada', description: 'Use a aba Reservas para aprovar/rejeitar.' });
   };
 
   const getStatusBadge = (status) => {
@@ -305,10 +316,10 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
               <TableBody>
                 {data.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.title}</TableCell>
-                    <TableCell>{item.location}</TableCell>
-                    <TableCell>{item.date}</TableCell>
-                    <TableCell>{item.time}</TableCell>
+                    <TableCell className="font-medium">{item.titulo}</TableCell>
+                    <TableCell>{item.local?.nome || 'Local não definido'}</TableCell>
+                    <TableCell>{new Date(item.data).toLocaleDateString('pt-BR')}</TableCell>
+                    <TableCell>{new Date(item.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
                     <TableCell>{getStatusBadge(item.status)}</TableCell>
                     {selectedStatsType === 'pending' && (
                       <TableCell>
@@ -357,7 +368,7 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-100 text-sm">Total de Reservas</p>
-                <p className="text-3xl font-bold">{stats.totalReservations}</p>
+                <p className="text-3xl font-bold">{stats.total}</p>
               </div>
               <Calendar className="h-8 w-8 text-blue-200" />
             </div>
@@ -372,7 +383,7 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-orange-100 text-sm">Aguardando Aprovação</p>
-                <p className="text-3xl font-bold">{reservationsData.pending.length}</p>
+                <p className="text-3xl font-bold">{stats.pending}</p>
               </div>
               <Clock className="h-8 w-8 text-orange-200" />
             </div>
@@ -387,7 +398,7 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-sm">Reservas Ativas</p>
-                <p className="text-3xl font-bold">{reservationsData.active.length}</p>
+                <p className="text-3xl font-bold">{stats.active}</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-200" />
             </div>
@@ -454,12 +465,12 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
                 <div key={event.id} className="flex flex-col p-3 bg-blue-50 rounded-lg">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <p className="font-medium text-gray-900">{event.title}</p>
-                      <p className="text-sm text-gray-600">{event.location}</p>
-                      <p className="text-sm text-gray-500">{event.date}</p>
+                      <p className="font-medium text-gray-900">{event.titulo}</p>
+                      <p className="text-sm text-gray-600">{event.local?.nome || 'Local não definido'}</p>
+                      <p className="text-sm text-gray-500">{new Date(event.data).toLocaleDateString('pt-BR')}</p>
                     </div>
                     <div className="text-blue-600 font-medium text-sm">
-                      {event.time}
+                      {new Date(event.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 </div>
@@ -482,8 +493,10 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
             {recentReservations.map((reservation) => (
               <div key={reservation.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="font-medium">{reservation.location}</p>
-                  <p className="text-sm text-gray-600">{reservation.date} às {reservation.time}</p>
+                  <p className="font-medium">{reservation.local?.nome || 'Local não definido'}</p>
+                  <p className="text-sm text-gray-600">
+                    {new Date(reservation.data).toLocaleDateString('pt-BR')} às {new Date(reservation.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
                 </div>
                 <div className="flex items-center space-x-2">
                   {reservation.status === 'approved' ? (
@@ -532,16 +545,18 @@ const Dashboard = ({ user, setActiveTab, setSelectedDate: setGlobalSelectedDate 
                       <div key={reservation.id} className="p-3 border rounded-lg">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="font-medium">{reservation.title}</p>
-                            <p className="text-sm text-gray-600">{reservation.location}</p>
-                            <p className="text-sm text-gray-500">Responsável: {reservation.responsible}</p>
+                            <p className="font-medium">{reservation.titulo}</p>
+                            <p className="text-sm text-gray-600">{reservation.local?.nome || 'Local não definido'}</p>
+                            <p className="text-sm text-gray-500">Responsável: {reservation.responsavel_perfil?.nome || 'Não informado'}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-medium text-blue-600">{reservation.time}</p>
+                            <p className="font-medium text-blue-600">
+                              {new Date(reservation.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
                             <span className={cn(
                               "text-xs px-2 py-1 rounded-full",
-                              reservation.status === 'approved' 
-                                ? "bg-green-100 text-green-800" 
+                              reservation.status === 'approved'
+                                ? "bg-green-100 text-green-800"
                                 : "bg-orange-100 text-orange-800"
                             )}>
                               {reservation.status === 'approved' ? 'Aprovado' : 'Pendente'}
