@@ -78,29 +78,12 @@ const Signup = () => {
         return;
       }
 
-      // 2) Criar perfil em public.perfis (o trigger já deve fazer isso, mas vamos garantir)
-      const { error: perfilError } = await supabase
-        .from('perfis')
-        .insert({
-          id: authData.user?.id,
-          nome: formData.nome,
-          tipo_usuario: 'usuario',
-          telefone: formData.telefone || null
-        });
-
-      if (perfilError) {
-        console.error('Erro ao criar perfil (trigger deveria ter criado):', perfilError);
-        toast({
-          title: 'Conta criada, mas houve um problema ao criar o perfil',
-          description: 'Contate o administrador.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Conta criada com sucesso!',
-          description: 'Você já pode fazer login.',
-        });
-      }
+      // 2) O trigger on_auth_user_created deve criar o perfil automaticamente
+      // Não tentamos inserir manualmente para evitar 401
+      toast({
+        title: 'Conta criada com sucesso!',
+        description: 'Você já pode fazer login.',
+      });
 
       // 3) Redirecionar para login
       navigate('/auth');
